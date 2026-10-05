@@ -1,0 +1,66 @@
+{
+  "id": 12,
+  "title": "Feedback Receipt",
+  "framework": "Express",
+  "transport": "api",
+  "details": [],
+  "projects": [],
+  "actions": [],
+  "capacity": 0,
+  "adminOnly": false,
+  "hideForm": false,
+  "publicList": false,
+  "formNote": "Your details are used only to handle this request.",
+  "kind": "feedback",
+  "eyebrow": "A QUICK CHECK-IN",
+  "headline": "How did we do?",
+  "description": "Share a rating and a little context. You will receive a copy of your feedback for your records.",
+  "button": "Send feedback",
+  "fields": [
+    {
+      "name": "name",
+      "label": "Your name",
+      "type": "text"
+    },
+    {
+      "name": "email",
+      "label": "Email address",
+      "type": "email"
+    },
+    {
+      "name": "rating",
+      "label": "Your rating",
+      "type": "select",
+      "options": [
+        {
+          "value": "1",
+          "label": "1 / 5"
+        },
+        {
+          "value": "2",
+          "label": "2 / 5"
+        },
+        {
+          "value": "3",
+          "label": "3 / 5"
+        },
+        {
+          "value": "4",
+          "label": "4 / 5"
+        },
+        {
+          "value": "5",
+          "label": "5 / 5"
+        }
+      ]
+    },
+    {
+      "name": "message",
+      "label": "Your feedback",
+      "type": "textarea"
+    }
+  ],
+  "success": "Your feedback is saved. Thank you.",
+  "accent": "#6654a1",
+  "batch": false
+}
