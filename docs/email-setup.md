@@ -12,7 +12,7 @@ Verify your sending domain, set `MAIL_MODE=production`, `MAIL_FROM` on that doma
 
 ## Message details
 
-Each content send includes a workflow `category`, plain text and escaped HTML. `custom_variables` carries the stored record ID and workflow for finding the message in provider logs; it does not render template text. `X-Workflow-Reference` supplies the same reference as a custom header. A contact or review message uses `reply_to` when the workflow has a reply address. No extra recipients are added to an email for demonstration purposes.
+Each content send includes a workflow `category`, plain text and escaped HTML. `custom_variables` carries the stored record ID and workflow for finding the message in provider logs; it does not render template text. `X-Workflow-Reference` supplies the same reference as a custom header. Receipts use the `feedback.receipt` category. Low-rating alerts to `OWNER_EMAIL` use `feedback.alert` and set `reply_to` to the submitter, so the owner can reply directly; `from` always stays `MAIL_FROM` on your verified domain. `FEEDBACK_ALERT_MAX_RATING` (default `2`, `0` for off) sets which ratings trigger an alert. No extra recipients are added to an email for demonstration purposes.
 
 ## Previews and failures
 

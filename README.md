@@ -1,18 +1,21 @@
-# Feedback Receipt
+# Express Feedback Form with Email Receipts and Low-Rating Alerts (Mailtrap Email API)
 
-Collect a rating and one feedback field. This small application demonstrates **Input validation and error handling** with Express.
+A small Node.js feedback app: visitors leave a 1–5 rating and a comment, get a copy of their feedback by email, and low ratings alert the owner with Reply-To set to the submitter, so the owner can answer from their inbox. Built with Express 5, Node.js 24's built-in SQLite and Zod, it sends email through the [Mailtrap Email API](https://mailtrap.io/email-api/?utm_source=github&utm_medium=repo&utm_campaign=express-feedback-receipt) with native `fetch` (no SDK). During development, emails are captured in the [Mailtrap Email Sandbox](https://mailtrap.io/email-sandbox/?utm_source=github&utm_medium=repo&utm_campaign=express-feedback-receipt) instead of being delivered.
 
 ## What it does
 
 Share a rating and a little context. You will receive a copy of your feedback for your records.
 
-The email workflow: send the submitter a copy of their feedback.
+The email workflow:
+
+- **Receipt** (`feedback.receipt`): the submitter gets a copy of their rating and message.
+- **Low-rating alert** (`feedback.alert`): when the rating is at or below `FEEDBACK_ALERT_MAX_RATING` (default 2), `OWNER_EMAIL` gets the feedback with `reply_to` set to the submitter. Leave `OWNER_EMAIL` empty, or set the threshold to `0`, to turn alerts off.
 
 ## Technologies
 
-- Express
+- Express 5
 - EJS
-- native fetch
+- [Mailtrap Email API](https://docs.mailtrap.io/email-api-smtp/overview?utm_source=github&utm_medium=repo&utm_campaign=express-feedback-receipt) for sending and [Mailtrap Email Sandbox](https://docs.mailtrap.io/email-sandbox/overview?utm_source=github&utm_medium=repo&utm_campaign=express-feedback-receipt) for testing, called with native `fetch` (no SDK)
 - Node.js 24 and its built-in SQLite module for local persistence
 - Zod for input validation
 
@@ -41,6 +44,7 @@ Use that value in `.env`; the operator username is `admin`. See [email configura
 1. Open http://localhost:3000 after starting the application.
 2. Complete the form with realistic sample values and submit.
 3. Check `/admin` for the saved record and email state.
+4. Submit a rating of 1 or 2 with `OWNER_EMAIL` set; `/admin` lists a `feedback.alert` email next to the receipt.
 
 Example form values:
 
@@ -61,7 +65,8 @@ Example form values:
 | --- | --- |
 | `APP_URL` | Exact public origin; used for email links and cross-origin checks |
 | `ADMIN_PASSWORD` | Operator password, at least 16 characters |
-| `OWNER_EMAIL` | Fixed recipient for owner notifications; replace the example address |
+| `OWNER_EMAIL` | Recipient of low-rating alerts; leave empty to turn alerts off |
+| `FEEDBACK_ALERT_MAX_RATING` | Ratings at or below this value (1–5) alert `OWNER_EMAIL`; default `2`, `0` turns alerts off |
 | `REVIEWER_EMAIL` | Fixed reviewer for review requests; otherwise unused |
 | `DB_PATH` | SQLite file; defaults to `.data/app.sqlite` |
 | `HOST`, `PORT` | Production listener settings where supported by the framework |
@@ -103,6 +108,51 @@ This retries pending and known-failed messages. `accepted` means accepted by the
 Run one Node process behind HTTPS with a persistent writable volume for `DB_PATH`. Run the build first, then start with your configured environment. Set `APP_URL` to the real HTTPS origin; do not trust arbitrary forwarded headers. The operator uses HTTP Basic authentication and must be protected by HTTPS outside localhost. This app is not designed for ephemeral or multi-instance serverless storage.
 
 Form submissions are limited to 12 per client per hour and 3 per recipient per hour. Behind a reverse proxy, clients may share the proxy address; configure infrastructure limits before larger deployment. There is no multi-user operator system, payment processing, distributed job queue, or production email webhook tracker.
+
+## FAQ
+
+### How do I send a feedback receipt email from Express with the Mailtrap Email API?
+
+Send a `POST` with a Bearer token to the Mailtrap Email API. `src/core/mail.js` does this with native `fetch`, a 15-second timeout and a check that every recipient got a message ID:
+
+```js
+const response = await fetch('https://send.api.mailtrap.io/api/send', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${process.env.MAILTRAP_PRODUCTION_TOKEN}`
+  },
+  body: JSON.stringify({
+    from: { email: process.env.MAIL_FROM, name: 'Feedback Receipt' },
+    to: [{ email: 'alex@example.com' }],
+    subject: 'A copy of your feedback',
+    text: 'Hello Alex,\nThank you for sharing your feedback.\nRating: 4/5',
+    category: 'feedback.receipt'
+  }),
+  signal: AbortSignal.timeout(15000)
+});
+const result = await response.json(); // { success: true, message_ids: [...] }
+```
+
+### How can the site owner reply to feedback straight from their inbox?
+
+The low-rating alert sets `reply_to` to the submitter's address, while `from` stays on your verified sending domain. Pressing Reply in any mail client answers the person who left the feedback, and the app never sends from an address it doesn't own:
+
+```js
+{ to: [{ email: process.env.OWNER_EMAIL }], reply_to: { email: 'alex@example.com' }, category: 'feedback.alert', ... }
+```
+
+### How do I test feedback emails without sending them to real people?
+
+Keep `MAIL_MODE=sandbox`. Emails go to `https://sandbox.api.mailtrap.io/api/send/{inbox_id}` and land in the [Mailtrap Email Sandbox](https://mailtrap.io/email-sandbox/?utm_source=github&utm_medium=repo&utm_campaign=express-feedback-receipt), where you can check the receipt and the alert, including the Reply-To header. For offline work, `MAIL_MODE=log` with `npm run dev` writes them to `.data/emails.jsonl`. See [email setup](docs/email-setup.md).
+
+### How do I validate form input in Express with Zod?
+
+`src/core/service.js` builds a Zod schema from the field list in `src/core/config.js`: text is trimmed and length-limited, the email is checked and lowercased, and the rating must be one of the listed options (`1`–`5`). Invalid input is rejected before anything is stored or emailed.
+
+### What happens if an email fails to send?
+
+The feedback and its emails are saved in one SQLite transaction before sending, so a failure never loses a submission. `/admin` shows each email's type and state, and `npm run retry-email` retries failed messages. A failed owner alert doesn't change what the submitter is told about their receipt.
 
 ## License
 
