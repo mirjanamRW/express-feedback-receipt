@@ -24,7 +24,15 @@ export function createService({store=openStore(), deliver=sendMail}={}) {
   const notify=(row,key,to,subject,text,replyTo)=>queue(`${row.id}:${key}`,{to:Array.isArray(to)?to:[to],subject,text,category:`${config.kind}.${key.split('-')[0]}`,customVariables:{record_id:row.id,workflow:config.kind},headers:{'X-Workflow-Reference':row.id},...(replyTo?{replyTo}:{})});
   const duplicate=(key,message='This request has already been recorded.')=>{if(find(key))throw new AppError(message,409)};
   const requirePending=(id,status='pending')=>{const row=get(id);if(!row || row.kind!==config.kind)throw new AppError('Record not found.',404);if(row.status!==status)throw new AppError('This record has already been updated.',409);return row};
-  const onSubmit=data=>{const row=insert(config.kind,data);notify(row,'receipt',data.email,'A copy of your feedback',`Hello ${data.name},\nThank you for sharing your feedback.\nRating: ${data.rating}/5\n\n${data.message}`);return row};
+  // Ratings at or below FEEDBACK_ALERT_MAX_RATING (default 2; 0 turns alerts off) also notify OWNER_EMAIL, who can reply straight to the submitter.
+  const alertMaxRating=()=>{const value=Number(process.env.FEEDBACK_ALERT_MAX_RATING || 2);return Number.isInteger(value) && value>=0 && value<=5?value:2};
+  const onSubmit=data=>{
+    const row=insert(config.kind,data);
+    notify(row,'receipt',data.email,'A copy of your feedback',`Hello ${data.name},\nThank you for sharing your feedback.\nRating: ${data.rating}/5\n\n${data.message}`);
+    const alertTo=process.env.OWNER_EMAIL;
+    if(alertTo && Number(data.rating)<=alertMaxRating())notify(row,'alert',alertTo,`Low rating: ${data.rating}/5 from ${data.name.replace(/\s+/g,' ')}`,`${data.name} <${data.email}> rated ${config.title} ${data.rating}/5.\nReply to this email to answer them directly.\n\n${data.message}\n\nReference: ${row.id}`,data.email);
+    return row;
+  };
 const publicView=()=>({count:records(config.kind).length,rows:[]});
   const adminExtra=()=>({});
   const onAction=()=>{throw new AppError('Unknown operator action.',400)};
@@ -64,7 +72,7 @@ const publicView=()=>({count:records(config.kind).length,rows:[]});
     await flush();
     let message=result.message || config.success;
     if(result.id){
-      const states=db.prepare('SELECT status FROM outbox WHERE dedupe_key LIKE ?').all(`${result.id}:%`).map(row=>row.status);
+      const states=db.prepare('SELECT status FROM outbox WHERE dedupe_key=?').all(`${result.id}:receipt`).map(row=>row.status);
       if(states.some(state=>['failed','unknown','pending','sending'].includes(state)))message+=' The email has not been confirmed as sent yet; the operator can review its status.';
       else if(states.includes('logged'))message+=' The email was recorded locally; no message was sent.';
     }
@@ -86,7 +94,7 @@ const publicView=()=>({count:records(config.kind).length,rows:[]});
     });
     await flush();return result;
   }
-  function adminView() {return {records:records(config.kind),outbox:db.prepare('SELECT id,status,error,created_at FROM outbox ORDER BY created_at DESC LIMIT 30').all(),extra:adminExtra()};}
+  function adminView() {return {records:records(config.kind),outbox:db.prepare("SELECT id,status,error,created_at,json_extract(payload,'$.category') AS category FROM outbox ORDER BY created_at DESC LIMIT 30").all(),extra:adminExtra()};}
   function retryFailed() {db.prepare("UPDATE outbox SET status='pending',error=NULL WHERE status='failed'").run();return flush();}
   return {store,submit,action,access,redeem,publicView,adminView,flush,retryFailed};
 }
